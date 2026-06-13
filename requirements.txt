@@ -1,0 +1,13 @@
+numpy
+pillow
+requests
+onnx
+onnxruntime-gpu
+onnxscript
+torch
+torchvision
+transformers
+safetensors
+accelerate
+sentencepiece
+av

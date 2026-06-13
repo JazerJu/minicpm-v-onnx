@@ -1,0 +1,40 @@
+# Model files (multi-GB)
+models/
+model/
+MiniCPM-V/
+
+# Separate local video-understanding project; not part of MiniCPM-V ONNX export/runtime.
+vidUnder/
+logs/
+
+# Runtime shared libraries (users compile llama.cpp and copy .so into bin/)
+bin/*.so
+bin/*.so.*
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Diagnostic / temp scripts (not part of pipeline)
+compare_vis_tokens.py
+compare-v45.py
+diag_v45_onnx.py
+diag_v45.py
+check_gguf_meta.py
+check_tokens.py
+verify_proj_weight.py
+
+# Local scratch / outputs
+outputs/
+tmp/
+
+# Virtual env
+.venv/
+
+# OpenCode session files
+OPENCODE_*
+
+# OS
+.DS_Store
