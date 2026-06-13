@@ -82,21 +82,21 @@ Vulkan backend is recommended for NVIDIA users — best compatibility.
 Recommended video path, MiniCPM-V 4.5:
 
 ```bash
-huggingface-cli download openbmb/MiniCPM-V-4_5 \
+hf download openbmb/MiniCPM-V-4_5 \
   --local-dir models/MiniCPM-V-4.5/MiniCPM-V-4_5
 
-huggingface-cli download openbmb/MiniCPM-V-4_5-gguf \
+hf download openbmb/MiniCPM-V-4_5-gguf \
   --include "*Q4_K_M.gguf" \
   --local-dir models/MiniCPM-V-4.5/MiniCPM-V-4_5_GGUF
 ```
 
-Optional MiniCPM-V 4.6 path:
+MiniCPM-V 4.6, lighter (1.8B):
 
 ```bash
-huggingface-cli download openbmb/MiniCPM-V-4.6 \
+hf download openbmb/MiniCPM-V-4.6 \
   --local-dir models/MiniCPM-V-4.6/MiniCPM-V-4_6
 
-huggingface-cli download openbmb/MiniCPM-V-4.6-gguf \
+hf download openbmb/MiniCPM-V-4.6-gguf \
   --include "*Q4_K_M.gguf" \
   --local-dir models/MiniCPM-V-4.6/MiniCPM-V-4_6_GGUF
 ```
