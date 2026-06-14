@@ -49,8 +49,11 @@ class llama_context_params(ctypes.Structure):
         ("n_batch", ctypes.c_uint32),
         ("n_ubatch", ctypes.c_uint32),
         ("n_seq_max", ctypes.c_uint32),
+        ("n_rs_seq", ctypes.c_uint32),
+        ("n_outputs_max", ctypes.c_uint32),
         ("n_threads", ctypes.c_int32),
         ("n_threads_batch", ctypes.c_int32),
+        ("ctx_type", ctypes.c_int32),
         ("rope_scaling_type", ctypes.c_int32),
         ("pooling_type", ctypes.c_int32),
         ("attention_type", ctypes.c_int32),
@@ -77,6 +80,7 @@ class llama_context_params(ctypes.Structure):
         ("kv_unified", ctypes.c_bool),
         ("samplers", ctypes.POINTER(ctypes.c_void_p)),
         ("n_samplers", ctypes.c_size_t),
+        ("ctx_other", ctypes.POINTER(ctypes.c_void_p)),
     ]
 
 
@@ -111,6 +115,7 @@ _llama_lib = None
 _ggml_lib = None
 _wrap_lib = None
 _log_cb = None
+_use_wrapper = False
 
 _fn = {}
 
@@ -136,8 +141,70 @@ def _ensure_system_libstdcxx():
 _ensure_system_libstdcxx()
 
 
+def _make_model_params(n_gpu_layers=99, use_mmap=True):
+    params = llama_model_params()
+    params.devices = ctypes.POINTER(ctypes.c_void_p)()
+    params.tensor_buft_overrides = ctypes.POINTER(ctypes.c_void_p)()
+    params.n_gpu_layers = n_gpu_layers
+    params.split_mode = 0
+    params.main_gpu = 0
+    params.tensor_split = ctypes.POINTER(ctypes.c_float)()
+    params.progress_callback = ctypes.c_void_p()
+    params.progress_callback_user_data = ctypes.c_void_p()
+    params.kv_overrides = ctypes.POINTER(ctypes.c_void_p)()
+    params.vocab_only = False
+    params.use_mmap = use_mmap
+    params.use_direct_io = False
+    params.use_mlock = False
+    params.check_tensors = False
+    params.use_extra_bufts = False
+    params.no_host = False
+    params.no_alloc = False
+    return params
+
+
+def _make_context_params(n_ctx=4096, n_batch=512, n_ubatch=512, n_seq_max=1,
+                         flash_attn=True, embeddings=False,
+                         cache_type_k=0, cache_type_v=0):
+    cpu_count = os.cpu_count() or 4
+    params = llama_context_params()
+    params.n_ctx = n_ctx
+    params.n_batch = n_batch
+    params.n_ubatch = n_ubatch
+    params.n_seq_max = n_seq_max
+    params.n_threads = cpu_count // 2
+    params.n_threads_batch = cpu_count
+    params.rope_scaling_type = 0
+    params.pooling_type = 0
+    params.attention_type = 0
+    params.flash_attn_type = 1 if flash_attn else 0
+    params.rope_freq_base = 0.0
+    params.rope_freq_scale = 0.0
+    params.yarn_ext_factor = -1.0
+    params.yarn_attn_factor = 1.0
+    params.yarn_beta_fast = 32.0
+    params.yarn_beta_slow = 1.0
+    params.yarn_orig_ctx = 0
+    params.defrag_thold = -1.0
+    params.cb_eval = ctypes.c_void_p()
+    params.cb_eval_user_data = ctypes.c_void_p()
+    params.type_k = cache_type_k
+    params.type_v = cache_type_v
+    params.abort_callback = ctypes.c_void_p()
+    params.abort_callback_data = ctypes.c_void_p()
+    params.embeddings = embeddings
+    params.offload_kqv = True
+    params.no_perf = True
+    params.op_offload = False
+    params.swa_full = False
+    params.kv_unified = False
+    params.samplers = ctypes.POINTER(ctypes.c_void_p)()
+    params.n_samplers = 0
+    return params
+
+
 def _bind_libs():
-    global _llama_lib, _ggml_lib, _wrap_lib
+    global _llama_lib, _ggml_lib, _wrap_lib, _use_wrapper
 
     if _llama_lib is not None:
         return
@@ -302,6 +369,7 @@ def _bind_libs():
         _fn["batch_free"] = _wrap_lib.wrap_batch_free
         _fn["batch_free"].argtypes = [ctypes.POINTER(llama_batch)]
         _fn["batch_free"].restype = None
+        _use_wrapper = True
     else:
         # Fallback: direct ctypes (may crash on some builds)
         _fn["model_load"] = L.llama_model_load_from_file
@@ -316,6 +384,7 @@ def _bind_libs():
         _fn["batch_free"] = L.llama_batch_free
         _fn["batch_free"].argtypes = [llama_batch]
         _fn["batch_free"].restype = None
+        _use_wrapper = False
 
     # Suppress llama.cpp info logs (keep ref to prevent GC of callback)
     global _log_cb
@@ -348,7 +417,11 @@ def token_to_piece(vocab, token_id):
 class LlamaModel:
     def __init__(self, path, n_gpu_layers=99, use_mmap=True):
         _bind_libs()
-        self.ptr = _fn["model_load"](Path(path).as_posix().encode("utf-8"), n_gpu_layers, use_mmap)
+        if _use_wrapper:
+            self.ptr = _fn["model_load"](Path(path).as_posix().encode("utf-8"), n_gpu_layers, use_mmap)
+        else:
+            params = _make_model_params(n_gpu_layers, use_mmap)
+            self.ptr = _fn["model_load"](Path(path).as_posix().encode("utf-8"), params)
         if not self.ptr:
             raise RuntimeError(f"Failed to load model: {path}")
         self.vocab = _fn["model_get_vocab"](self.ptr)
@@ -371,21 +444,31 @@ class LlamaModel:
 
 class LlamaContext:
     def __init__(self, model, n_ctx=4096, n_batch=512, n_ubatch=512, flash_attn=True, cache_type_k=0, cache_type_v=0):
-        cpu_count = os.cpu_count() or 4
         self.model = model
-        self.ptr = _fn["context_init"](
-            model.ptr,
-            n_ctx, n_batch, n_ubatch, 1,
-            1 if flash_attn else 0, 0,
-            cpu_count // 2, cpu_count,
-            cache_type_k, cache_type_v,
-        )
+        if _use_wrapper:
+            cpu_count = os.cpu_count() or 4
+            self.ptr = _fn["context_init"](
+                model.ptr,
+                n_ctx, n_batch, n_ubatch, 1,
+                1 if flash_attn else 0, 0,
+                cpu_count // 2, cpu_count,
+                cache_type_k, cache_type_v,
+            )
+        else:
+            params = _make_context_params(
+                n_ctx=n_ctx, n_batch=n_batch, n_ubatch=n_ubatch,
+                flash_attn=flash_attn,
+                cache_type_k=cache_type_k, cache_type_v=cache_type_v,
+            )
+            self.ptr = _fn["context_init"](model.ptr, params)
         if not self.ptr:
             raise RuntimeError("Failed to create context")
 
     def decode(self, batch):
         s = batch.struct if hasattr(batch, "struct") else batch
-        return _fn["decode"](self.ptr, ctypes.byref(s))
+        if _use_wrapper:
+            return _fn["decode"](self.ptr, ctypes.byref(s))
+        return _fn["decode"](self.ptr, s)
 
     def decode_token(self, token_id, pos=0):
         batch = _fn["batch_init"](1, 0, 1)
@@ -395,8 +478,12 @@ class LlamaContext:
         batch.n_seq_id[0] = 1
         batch.seq_id[0][0] = 0
         batch.logits[0] = 1
-        ret = _fn["decode"](self.ptr, ctypes.byref(batch))
-        _fn["batch_free"](ctypes.byref(batch))
+        if _use_wrapper:
+            ret = _fn["decode"](self.ptr, ctypes.byref(batch))
+            _fn["batch_free"](ctypes.byref(batch))
+        else:
+            ret = _fn["decode"](self.ptr, batch)
+            _fn["batch_free"](batch)
         return ret
 
     def get_logits(self):
@@ -476,7 +563,10 @@ class LlamaBatch:
 
     def __del__(self):
         if hasattr(self, "struct"):
-            _fn["batch_free"](ctypes.byref(self.struct))
+            if _use_wrapper:
+                _fn["batch_free"](ctypes.byref(self.struct))
+            else:
+                _fn["batch_free"](self.struct)
 
 
 class LlamaSampler:
