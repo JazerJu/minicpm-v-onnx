@@ -42,7 +42,7 @@ pip install -r requirements.txt
 | CPU only | `llama-bXXXX-bin-ubuntu-x64.tar.gz` | ~15 MB |
 | ROCm (AMD) | `llama-bXXXX-bin-ubuntu-rocm-x64.tar.gz` | ~128 MB |
 
-> `bXXXX` 是 build 号，下载时选最新版本对应的文件名即可。
+> `bXXXX` 是 llama.cpp 的 build（版本）号。本项目已测试 **b9159**（最低 **b7668**），请在此范围内选择 release。
 
 解压后把 `.so*` 复制到 `bin/`：
 

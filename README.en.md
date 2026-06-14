@@ -35,7 +35,7 @@ Download the tarball for your backend from [llama.cpp Release](https://github.co
 | CPU only | `llama-bXXXX-bin-ubuntu-x64.tar.gz` | ~15 MB |
 | ROCm (AMD) | `llama-bXXXX-bin-ubuntu-rocm-x64.tar.gz` | ~128 MB |
 
-> `bXXXX` is the build number — pick the latest release.
+> `bXXXX` is the llama.cpp build (version) number. This project is tested with **b9159** (minimum **b7668**) — pick a release in that range.
 
 Extract and copy `.so*` into `bin/`:
 
